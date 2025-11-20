@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Cliente, Anexo } from '../types';
 
 interface ClientDetailsProps {
@@ -9,8 +9,10 @@ interface ClientDetailsProps {
 
 export const ClientDetails: React.FC<ClientDetailsProps> = ({ cliente, onClose }) => {
   const [previewData, setPreviewData] = useState<{data: string, type: 'image'} | null>(null);
-  // Estado para armazenar URL de blob para PDFs
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  
+  // Referência para o conteúdo que será impresso
+  const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => {
@@ -19,7 +21,118 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ cliente, onClose }
   }, [pdfUrl]);
 
   const handlePrint = () => {
-    window.print();
+    if (!printRef.current) return;
+
+    // 1. Criar um iframe invisível
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    // 2. Obter o conteúdo HTML
+    const content = printRef.current.innerHTML;
+
+    // 3. Escrever o documento no iframe com estilos forçados para impressão
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(`
+        <html>
+          <head>
+            <title>Ficha do Cliente - ${cliente.nome}</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+              
+              body {
+                font-family: 'Inter', sans-serif;
+                background-color: white !important;
+                color: black !important;
+                margin: 0;
+                padding: 20px;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+
+              /* Forçar visibilidade do cabeçalho de impressão */
+              .print-header {
+                display: block !important;
+                margin-bottom: 20px;
+                text-align: center;
+                border-bottom: 2px solid #000;
+                padding-bottom: 10px;
+              }
+
+              .print-footer {
+                display: block !important;
+                margin-top: 30px;
+                padding-top: 10px;
+                border-top: 1px solid #ccc;
+                text-align: center;
+                font-size: 10px;
+                color: #666;
+              }
+              
+              /* Esconder botões e elementos não imprimíveis */
+              .no-print, button {
+                display: none !important;
+              }
+
+              /* Resetar cores escuras para preto no papel */
+              .text-white, .text-slate-200, .text-slate-300, .text-slate-400, .text-blue-100, .text-blue-200, .text-blue-300, .text-blue-400 {
+                color: black !important;
+              }
+
+              .text-slate-500 {
+                color: #444 !important;
+              }
+
+              /* Bordas e Fundos */
+              .border, .border-slate-700, .border-white\\/10, .border-blue-500\\/20 {
+                border-color: #ccc !important;
+                border-width: 1px !important;
+              }
+              
+              .bg-slate-800\\/50, .bg-slate-900\\/50, .bg-blue-900\\/20 {
+                background-color: transparent !important;
+              }
+
+              /* Layout Grid */
+              .grid {
+                display: grid !important;
+              }
+              
+              /* Ajustes de Texto */
+              h3 {
+                border-bottom: 1px solid #000 !important;
+                color: #000 !important;
+                margin-top: 20px !important;
+                margin-bottom: 10px !important;
+              }
+
+              /* Imagens */
+              img {
+                max-width: 100%;
+              }
+            </style>
+          </head>
+          <body>
+            ${content}
+          </body>
+        </html>
+      `);
+      doc.close();
+
+      // 4. Aguardar carregamento e imprimir
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        // Remover iframe após impressão (opcional, mas bom para limpeza)
+        // setTimeout(() => document.body.removeChild(iframe), 1000);
+      }, 500);
+    }
   };
 
   const handleCopy = () => {
@@ -72,6 +185,7 @@ Procuração: ${cliente.procuracao_status}
   const handlePreview = (anexo: Anexo) => {
     if (anexo.tipo === 'application/pdf') {
       try {
+        // Solução Robusta para PDF: Blob URL em Nova Aba
         const base64 = anexo.dados.includes(',') ? anexo.dados.split(',')[1] : anexo.dados;
         const binaryString = window.atob(base64);
         const len = binaryString.length;
@@ -81,10 +195,16 @@ Procuração: ${cliente.procuracao_status}
         }
         const blob = new Blob([bytes], { type: 'application/pdf' });
         const blobUrl = URL.createObjectURL(blob);
+        
+        // Abre em nova aba para usar o visualizador nativo (funciona em mobile/pc)
         window.open(blobUrl, '_blank');
+        
+        // Limpar a URL depois de um tempo para não vazar memória, mas dando tempo de abrir
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        
       } catch (e) {
         console.error("Erro ao abrir PDF", e);
-        alert("Erro ao abrir PDF. Tente baixar o arquivo.");
+        alert("Erro ao processar PDF. Tente baixar o arquivo.");
       }
     } else if (anexo.tipo.startsWith('image/')) {
       setPreviewData({ data: anexo.dados, type: 'image' });
@@ -97,14 +217,14 @@ Procuração: ${cliente.procuracao_status}
   };
 
   const renderAttachmentList = (title: string, status: string, anexos: Anexo[]) => (
-    <div className="border border-slate-700 rounded-xl p-4 bg-slate-800/50 print-border-gray break-inside-avoid hover:border-blue-500/30 transition-colors">
+    <div className="border border-slate-700 rounded-xl p-4 bg-slate-800/50 hover:border-blue-500/30 transition-colors">
       <div className="flex justify-between items-center mb-3">
-        <span className="font-bold text-slate-300 text-xs uppercase tracking-wider print-text-black">{title}</span>
+        <span className="font-bold text-slate-300 text-xs uppercase tracking-wider">{title}</span>
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
           status === 'Aprovado' ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 
           status === 'Recebido' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
           'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
-        } print-text-black print-bg-white print-border-gray`}>
+        }`}>
           {status}
         </span>
       </div>
@@ -117,7 +237,7 @@ Procuração: ${cliente.procuracao_status}
             const canPreview = isImage || isPdf;
 
             return (
-              <div key={anexo.id} className="flex items-center gap-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700 print-bg-white print-border-gray hover:bg-slate-700/50 transition-colors">
+              <div key={anexo.id} className="flex items-center gap-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700 hover:bg-slate-700/50 transition-colors">
                 {/* Preview / Icon */}
                 <div 
                   className={`w-10 h-10 flex-shrink-0 bg-slate-800 rounded overflow-hidden flex items-center justify-center border border-slate-600 ${canPreview ? 'cursor-pointer hover:border-blue-400' : ''}`}
@@ -134,17 +254,17 @@ Procuração: ${cliente.procuracao_status}
                 
                 {/* Info */}
                 <div className="flex-grow min-w-0">
-                  <p className="text-xs font-medium text-slate-200 truncate print-text-black" title={anexo.nome}>{anexo.nome}</p>
+                  <p className="text-xs font-medium text-slate-200 truncate" title={anexo.nome}>{anexo.nome}</p>
                   <p className="text-[10px] text-slate-500">{(anexo.tamanho / 1024).toFixed(1)} KB</p>
                 </div>
 
-                {/* Action Buttons - Hidden on Print */}
+                {/* Action Buttons */}
                 <div className="flex gap-1 no-print">
                   {canPreview && (
                     <button 
                       onClick={() => handlePreview(anexo)}
                       className="px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-white hover:text-black transition-colors flex items-center justify-center"
-                      title={isPdf ? "Abrir PDF em nova aba" : "Visualizar Imagem"}
+                      title={isPdf ? "Visualizar PDF" : "Visualizar Imagem"}
                     >
                       👁️
                     </button>
@@ -169,16 +289,15 @@ Procuração: ${cliente.procuracao_status}
 
   return (
     <>
-      <div id="client-details-overlay" className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-0 md:p-4">
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-0 md:p-4 h-full">
         
         {/* Modal Content */}
         <div 
-          id="client-details-content" 
-          className="bg-slate-900 border border-white/10 md:rounded-2xl shadow-2xl w-full max-w-4xl h-full md:h-auto md:max-h-[90vh] overflow-y-auto"
+          className="bg-slate-900 border border-white/10 md:rounded-2xl shadow-2xl w-full max-w-4xl h-full md:h-auto md:max-h-[90vh] overflow-y-auto flex flex-col"
         >
             
-            {/* Header with Actions (Hidden on Print) */}
-            <div className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-white/10 px-4 md:px-6 py-4 flex justify-between items-center z-10 no-print">
+            {/* Header with Actions */}
+            <div className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-white/10 px-4 md:px-6 py-4 flex justify-between items-center z-10 flex-shrink-0">
               <h2 className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
                   👤 Detalhes do Cliente
               </h2>
@@ -195,44 +314,39 @@ Procuração: ${cliente.procuracao_status}
               </div>
             </div>
             
-            {/* Printable Content */}
-            <div className="p-4 md:p-8 space-y-6 md:space-y-8 print-content">
-              {/* Header for Print Only */}
+            {/* Printable Content Container (ref for printing) */}
+            <div ref={printRef} className="p-4 md:p-8 space-y-6 md:space-y-8 flex-grow">
+              
+              {/* Header for Print Only (Hidden on Screen via className logic, shown via iframe style) */}
               <div className="hidden print-header text-center mb-8 border-b-2 border-gray-800 pb-4 pt-4">
                   <div className="flex items-center justify-center gap-4 mb-2">
-                      <img 
-                        src="https://drive.google.com/thumbnail?id=1hlyKB3L9oHLtRSrCV-JNdQXpZELdML-p&sz=w200" 
-                        alt="Logo" 
-                        className="h-16 object-contain"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
+                      {/* Usando imagem direta para impressão para evitar problemas de CORS com google drive */}
+                      <div style={{fontSize: '24px', fontWeight: 'bold'}}>SolarTekPro</div>
                   </div>
-                  <h1 className="text-3xl font-black text-gray-800 uppercase tracking-wider">SolarTekPro</h1>
                   <p className="text-sm text-gray-600 uppercase tracking-[0.3em]">Energias Renováveis</p>
                   <h2 className="text-xl mt-6 font-bold border px-4 py-1 inline-block rounded bg-gray-100">Ficha Cadastral do Cliente</h2>
               </div>
 
               {/* Section 1: Personal */}
-              <section className="break-inside-avoid">
-                  <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-700 pb-1 print:text-black print:border-gray-400">
+              <section>
+                  <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-700 pb-1">
                     Dados Pessoais
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-y-5 gap-x-8 text-sm">
-                    <div><span className="text-xs text-slate-500 block uppercase print-text-gray">Nome Completo</span><span className="font-bold text-white text-base print-text-black">{cliente.nome}</span></div>
-                    <div><span className="text-xs text-slate-500 block uppercase print-text-gray">CPF/CNPJ</span><span className="font-medium text-slate-300 font-mono print-text-black">{cliente.cpf}</span></div>
-                    <div><span className="text-xs text-slate-500 block uppercase print-text-gray">Telefone</span><span className="font-medium text-slate-300 print-text-black">{cliente.telefone}</span></div>
-                    <div><span className="text-xs text-slate-500 block uppercase print-text-gray">Email</span><span className="font-medium text-slate-300 print-text-black">{cliente.email || '-'}</span></div>
-                    <div className="md:col-span-2 bg-slate-800/50 p-4 rounded-xl border border-slate-700 print-bg-white">
-                        <span className="text-xs text-slate-500 block uppercase mb-1 print-text-gray">Endereço Completo</span>
-                        <span className="font-bold text-white block print-text-black">
+                    <div><span className="text-xs text-slate-500 block uppercase">Nome Completo</span><span className="font-bold text-white text-base">{cliente.nome}</span></div>
+                    <div><span className="text-xs text-slate-500 block uppercase">CPF/CNPJ</span><span className="font-medium text-slate-300 font-mono">{cliente.cpf}</span></div>
+                    <div><span className="text-xs text-slate-500 block uppercase">Telefone</span><span className="font-medium text-slate-300">{cliente.telefone}</span></div>
+                    <div><span className="text-xs text-slate-500 block uppercase">Email</span><span className="font-medium text-slate-300">{cliente.email || '-'}</span></div>
+                    <div className="md:col-span-2 bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                        <span className="text-xs text-slate-500 block uppercase mb-1">Endereço Completo</span>
+                        <span className="font-bold text-white block">
                           {cliente.logradouro}, {cliente.numero} {cliente.complemento ? `- ${cliente.complemento}` : ''}
                         </span>
-                        <span className="text-slate-400 block text-sm mt-1 print-text-black">
+                        <span className="text-slate-400 block text-sm mt-1">
                           {cliente.bairro} - {cliente.cidade} / CEP: {cliente.cep}
                         </span>
                         {cliente.ponto_referencia && (
-                          <span className="block mt-2 text-xs text-slate-500 italic border-t border-slate-700 pt-2 print-text-gray">
+                          <span className="block mt-2 text-xs text-slate-500 italic border-t border-slate-700 pt-2">
                               Ref: {cliente.ponto_referencia}
                           </span>
                         )}
@@ -241,57 +355,57 @@ Procuração: ${cliente.procuracao_status}
               </section>
 
               {/* Section 2: Technical */}
-              <section className="break-inside-avoid mt-8">
-                  <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-700 pb-1 print:text-black print:border-gray-400">
+              <section className="mt-8">
+                  <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-700 pb-1">
                     Dados da Instalação
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-blue-900/20 rounded-xl border border-blue-500/20 print-bg-white print-border-gray">
-                    <div><span className="text-[10px] text-blue-300/70 block uppercase print-text-gray">UC</span><span className="font-bold text-blue-100 font-mono text-lg print-text-black">{cliente.unidade_consumidora}</span></div>
-                    <div><span className="text-[10px] text-blue-300/70 block uppercase print-text-gray">Concessionária</span><span className="font-bold text-blue-200 print-text-black">{cliente.concessionaria}</span></div>
-                    <div><span className="text-[10px] text-blue-300/70 block uppercase print-text-gray">Disjuntor</span><span className="font-bold text-blue-200 print-text-black">{cliente.disjuntor_padrao}</span></div>
-                    <div><span className="text-[10px] text-blue-300/70 block uppercase print-text-gray">Sistema</span><span className="font-bold text-blue-200 print-text-black">{cliente.tipo_sistema}</span></div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-blue-900/20 rounded-xl border border-blue-500/20">
+                    <div><span className="text-[10px] text-blue-300/70 block uppercase">UC</span><span className="font-bold text-blue-100 font-mono text-lg">{cliente.unidade_consumidora}</span></div>
+                    <div><span className="text-[10px] text-blue-300/70 block uppercase">Concessionária</span><span className="font-bold text-blue-200">{cliente.concessionaria}</span></div>
+                    <div><span className="text-[10px] text-blue-300/70 block uppercase">Disjuntor</span><span className="font-bold text-blue-200">{cliente.disjuntor_padrao}</span></div>
+                    <div><span className="text-[10px] text-blue-300/70 block uppercase">Sistema</span><span className="font-bold text-blue-200">{cliente.tipo_sistema}</span></div>
                   </div>
               </section>
 
               {/* Section 3: Project Status */}
-              <section className="break-inside-avoid mt-8">
-                  <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-700 pb-1 print:text-black print:border-gray-400">
+              <section className="mt-8">
+                  <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-700 pb-1">
                     Status do Projeto
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <span className="text-xs text-slate-500 block uppercase print-text-gray">Status Atual</span>
-                        <span className={`inline-block px-4 py-1.5 rounded-full text-sm font-bold mt-1 border print-border-gray print-text-black ${
+                        <span className="text-xs text-slate-500 block uppercase">Status Atual</span>
+                        <span className={`inline-block px-4 py-1.5 rounded-full text-sm font-bold mt-1 border ${
                           cliente.status === 'Concluído' ? 'bg-green-500/20 text-green-300 border-green-500/30' : 'bg-blue-500/20 text-blue-300 border-blue-500/30'
                         }`}>
                           {cliente.status}
                         </span>
                     </div>
                     <div>
-                        <span className="text-xs text-slate-500 block uppercase print-text-gray">Tempo Gasto</span>
-                        <span className="font-medium text-white print-text-black">{cliente.tempo_projeto} horas</span>
+                        <span className="text-xs text-slate-500 block uppercase">Tempo Gasto</span>
+                        <span className="font-medium text-white">{cliente.tempo_projeto} horas</span>
                     </div>
                   </div>
                   
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 print-bg-white">
-                        <span className="text-[10px] text-slate-500 block uppercase print-text-gray">Entrada Homologação</span>
-                        <span className="font-bold text-slate-200 print-text-black">{formatDate(cliente.data_entrada_homologacao)}</span>
+                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                        <span className="text-[10px] text-slate-500 block uppercase">Entrada Homologação</span>
+                        <span className="font-bold text-slate-200">{formatDate(cliente.data_entrada_homologacao)}</span>
                     </div>
-                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 print-bg-white">
-                        <span className="text-[10px] text-slate-500 block uppercase print-text-gray">Resposta Concessionária</span>
-                        <span className="font-bold text-slate-200 print-text-black">{formatDate(cliente.data_resposta_concessionaria)}</span>
+                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                        <span className="text-[10px] text-slate-500 block uppercase">Resposta Concessionária</span>
+                        <span className="font-bold text-slate-200">{formatDate(cliente.data_resposta_concessionaria)}</span>
                     </div>
-                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 print-bg-white">
-                        <span className="text-[10px] text-slate-500 block uppercase print-text-gray">Data Vistoria</span>
-                        <span className="font-bold text-slate-200 print-text-black">{formatDate(cliente.data_vistoria)}</span>
+                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                        <span className="text-[10px] text-slate-500 block uppercase">Data Vistoria</span>
+                        <span className="font-bold text-slate-200">{formatDate(cliente.data_vistoria)}</span>
                     </div>
                   </div>
               </section>
 
               {/* Section 4: Docs & Attachments */}
-              <section className="mt-8 break-inside-avoid">
-                  <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-700 pb-1 print:text-black print:border-gray-400">
+              <section className="mt-8">
+                  <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-700 pb-1">
                     Documentos & Anexos
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -308,84 +422,6 @@ Procuração: ${cliente.procuracao_status}
               </div>
             </div>
         </div>
-
-        {/* Styles for Printing */}
-        <style>{`
-          @media print {
-            @page { 
-              size: A4; 
-              margin: 0.5cm; 
-            }
-            
-            html, body {
-              height: auto !important;
-              overflow: visible !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              background-color: white !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-
-            body > * {
-              display: none !important;
-            }
-
-            * {
-              animation: none !important;
-              transition: none !important;
-              box-shadow: none !important;
-              text-shadow: none !important;
-            }
-
-            #client-details-overlay {
-              display: block !important;
-              visibility: visible !important;
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: auto !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              background: white !important;
-              z-index: 9999 !important;
-              backdrop-filter: none !important;
-            }
-            
-            #client-details-overlay * {
-              visibility: visible !important;
-            }
-
-            #client-details-content {
-              display: block !important;
-              position: static !important;
-              width: 100% !important;
-              max-width: 100% !important;
-              height: auto !important;
-              max-height: none !important;
-              overflow: visible !important;
-              box-shadow: none !important;
-              border: none !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              background: white !important;
-              color: black !important;
-            }
-            
-            .print-content {
-                padding: 0 !important;
-            }
-
-            .no-print { display: none !important; }
-            .print-header, .print-footer { display: block !important; }
-            
-            .print-bg-white { background-color: white !important; border: 1px solid #ccc !important; }
-            .print-text-black { color: black !important; }
-            .print-text-gray { color: #555 !important; }
-            .print-border-gray { border-color: #ccc !important; }
-          }
-        `}</style>
       </div>
 
       {/* Image Zoom Modal */}

@@ -166,6 +166,50 @@ export default function App() {
     loadData();
   };
 
+  // --- BACKUP & RESTORE FUNCTIONS ---
+  const handleBackup = async () => {
+    const data = {
+      clientes: await StorageService.getClientes(),
+      servicos: await StorageService.getServicos(),
+      despesas: await StorageService.getDespesas()
+    };
+    
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `backup_solartek_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm("ATENÇÃO: Isso substituirá todos os dados atuais pelos do backup. Deseja continuar?")) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (data.clientes) localStorage.setItem('sgs_clientes', JSON.stringify(data.clientes));
+        if (data.servicos) localStorage.setItem('sgs_servicos', JSON.stringify(data.servicos));
+        if (data.despesas) localStorage.setItem('sgs_despesas', JSON.stringify(data.despesas));
+        
+        alert("Dados restaurados com sucesso! A página será recarregada.");
+        window.location.reload();
+      } catch (err) {
+        alert("Erro ao restaurar arquivo. Verifique se é um backup válido.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   if (showWelcome) {
     return <WelcomeScreen onEnter={() => setShowWelcome(false)} />;
   }
@@ -202,14 +246,26 @@ export default function App() {
             <span className="text-slate-600 hidden md:inline">|</span>
             <span className="text-slate-400">Todos os direitos reservados © {new Date().getFullYear()}</span>
           </div>
+          
           <div className="flex items-center gap-4 text-slate-300">
+             {/* BACKUP BUTTONS */}
+             <div className="flex items-center gap-2 mr-4 border-r border-slate-700 pr-4">
+                <button onClick={handleBackup} className="hover:text-blue-400 transition-colors flex items-center gap-1" title="Fazer Backup">
+                  💾 <span className="hidden sm:inline">Backup</span>
+                </button>
+                <label className="hover:text-green-400 transition-colors flex items-center gap-1 cursor-pointer" title="Restaurar Backup">
+                  📂 <span className="hidden sm:inline">Restaurar</span>
+                  <input type="file" onChange={handleRestore} accept=".json" className="hidden" />
+                </label>
+             </div>
+
             <div className="flex items-center gap-1.5 hover:text-green-400 transition-colors cursor-pointer">
               <span className="text-pink-500 text-base">📞</span>
-              <span>(51) 99166-3470</span>
+              <span className="hidden sm:inline">(51) 99166-3470</span>
             </div>
             <div className="flex items-center gap-1.5 hover:text-blue-400 transition-colors">
               <span className="text-blue-400 text-base">📧</span>
-              <a href="mailto:solartekpro@gmail.com" className="hover:underline decoration-blue-400/50">solartekpro@gmail.com</a>
+              <a href="mailto:solartekpro@gmail.com" className="hover:underline decoration-blue-400/50 hidden sm:inline">solartekpro@gmail.com</a>
             </div>
           </div>
         </div>
@@ -222,9 +278,9 @@ export default function App() {
             <div className="flex flex-col md:flex-row items-center gap-5 bg-slate-900/60 backdrop-blur-xl px-8 py-4 rounded-3xl shadow-[0_0_40px_rgba(0,0,0,0.3)] border border-white/5 w-full max-w-3xl mx-auto hover:border-white/10 transition-all duration-500">
               
               {/* Logo Circle */}
-              <div className="relative flex-shrink-0 group">
+              <div className="relative flex-shrink-0 group cursor-pointer" onClick={() => window.location.reload()} title="Recarregar Sistema">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-green-500 rounded-full blur opacity-60 group-hover:opacity-100 transition duration-500"></div>
-                <div className="relative bg-white p-1 rounded-full w-20 h-20 flex items-center justify-center overflow-hidden border-2 border-slate-900">
+                <div className="relative bg-white p-1 rounded-full w-20 h-20 flex items-center justify-center overflow-hidden border-2 border-slate-900 z-10">
                   {!logoError ? (
                     <img 
                       src="https://drive.google.com/thumbnail?id=1hlyKB3L9oHLtRSrCV-JNdQXpZELdML-p&sz=w200" 

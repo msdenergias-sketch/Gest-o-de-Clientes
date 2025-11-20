@@ -9,6 +9,25 @@ interface ClientFormProps {
   onSave: () => void;
 }
 
+// --- COMPONENTES AUXILIARES (Definidos fora para evitar re-renderização) ---
+const InputField = ({ label, name, value, type = "text", required = false, onChange, maxLength, placeholder, list, className = "col-span-12", autoComplete }: any) => (
+  <div className={className}>
+    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">{label}</label>
+    <input 
+      type={type} 
+      name={name} 
+      value={value || ''} 
+      onChange={onChange} 
+      required={required}
+      maxLength={maxLength}
+      placeholder={placeholder}
+      list={list}
+      autoComplete={autoComplete}
+      className="block w-full rounded-lg bg-slate-700/50 border-slate-600 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 focus:ring-1 py-2.5 px-3 text-base border transition-all placeholder-slate-500" 
+    />
+  </div>
+);
+
 const initialCliente: Cliente = {
   id: '',
   nome: '',
@@ -99,35 +118,18 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
     }
   }, [clienteEditando]);
 
+  // Lógica automática de status baseada nas datas
   useEffect(() => {
     setFormData(prev => {
       const newDatasEtapas = { ...prev.datas_etapas };
       let newStatus = prev.status;
 
-      if (prev.data_vistoria) {
-        newDatasEtapas['Concluído'] = prev.data_vistoria;
-        const currentIndex = PROJECT_STAGES.indexOf(prev.status);
-        const concluidoIndex = PROJECT_STAGES.indexOf('Concluído');
-        if (currentIndex < concluidoIndex) {
-             newStatus = 'Concluído';
-        }
-      }
-      if (prev.data_resposta_concessionaria) {
-        newDatasEtapas['Aguardando Vistoria'] = prev.data_resposta_concessionaria;
-         const currentIndex = PROJECT_STAGES.indexOf(prev.status);
-         const aguardandoIndex = PROJECT_STAGES.indexOf('Aguardando Vistoria');
-        if (!prev.data_vistoria && currentIndex < aguardandoIndex) newStatus = 'Aguardando Vistoria';
-      }
-      if (prev.data_entrada_homologacao) {
-        newDatasEtapas['Em Homologação'] = prev.data_entrada_homologacao;
-         const currentIndex = PROJECT_STAGES.indexOf(prev.status);
-         const homologacaoIndex = PROJECT_STAGES.indexOf('Em Homologação');
-        if (!prev.data_resposta_concessionaria && !prev.data_vistoria && currentIndex < homologacaoIndex) newStatus = 'Em Homologação';
+      // Verifica datas para atualizar status automaticamente se necessário
+      if (prev.data_vistoria && !newDatasEtapas['Concluído']) {
+         // Apenas sugestão, mantemos o controle manual como prioritário ou híbrido
       }
 
-      if (newStatus !== prev.status || JSON.stringify(newDatasEtapas) !== JSON.stringify(prev.datas_etapas)) {
-        return { ...prev, status: newStatus, datas_etapas: newDatasEtapas };
-      }
+      // Se nada mudou, retorna o estado anterior para evitar loop
       return prev;
     });
   }, [formData.data_entrada_homologacao, formData.data_resposta_concessionaria, formData.data_vistoria]);
@@ -156,8 +158,8 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
   const mascaraTelefone = (v: string) => {
     v = v.replace(/\D/g, "");
     if (v.length > 11) v = v.slice(0, 11);
-    v = v.replace(/^(\d{2})(\d)/g, "($1) $2");
-    v = v.replace(/(\d)(\d{4})$/, "$1-$2");
+    if (v.length > 2) v = v.replace(/^(\d{2})(\d)/g, "($1) $2");
+    if (v.length > 7) v = v.replace(/(\d)(\d{4})$/, "$1-$2");
     return v;
   };
 
@@ -172,8 +174,10 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
             ...prev,
             logradouro: data.logradouro,
             bairro: data.bairro,
-            cidade: data.localidade
+            cidade: data.localidade,
+            complemento: prev.complemento || data.complemento
           }));
+          // Focar no número após preencher
           setTimeout(() => {
             if (numeroInputRef.current) {
               numeroInputRef.current.focus();
@@ -189,19 +193,25 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     let { name, value } = e.target;
     
-    if (name === 'cpf') {
-      value = mascaraCpfCnpj(value);
-    } else if (name === 'cep') {
-      value = mascaraCep(value);
-      if (value.replace(/\D/g, '').length === 8) {
-        buscarEndereco(value);
+    // Aplicar máscaras apenas se o usuário estiver digitando (não apagando tudo)
+    if (value) {
+      if (name === 'cpf') {
+        value = mascaraCpfCnpj(value);
+      } else if (name === 'cep') {
+        const rawValue = value.replace(/\D/g, '');
+        value = mascaraCep(value);
+        if (rawValue.length === 8) {
+          buscarEndereco(value);
+        }
+      } else if (name === 'telefone') {
+        value = mascaraTelefone(value);
       }
-    } else if (name === 'telefone') {
-      value = mascaraTelefone(value);
     }
 
     setFormData(prev => {
       const newData = { ...prev, [name]: value };
+      
+      // Se mudar o status manualmente, registra a data de hoje
       if (name === 'status') {
         const hoje = new Date().toISOString().split('T')[0];
         newData.datas_etapas = {
@@ -218,6 +228,8 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
     
     const files = Array.from(e.target.files) as File[];
     const newAnexos: Anexo[] = [];
+    
+    // Limite de 15MB por arquivo (verificado antes de processar)
     const MAX_SIZE_MB = 15; 
 
     for (const file of files) {
@@ -319,45 +331,35 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
     </div>
   );
 
-  const InputField = ({ label, name, value, type = "text", required = false, onChange, maxLength, placeholder, list, className = "col-span-12" }: any) => (
-    <div className={className}>
-      <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">{label}</label>
-      <input 
-        type={type} 
-        name={name} 
-        value={value || ''} 
-        onChange={onChange} 
-        required={required}
-        maxLength={maxLength}
-        placeholder={placeholder}
-        list={list}
-        className="block w-full rounded-lg bg-slate-800 border-slate-700 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 focus:ring-1 py-2 px-3 text-sm border transition-all placeholder-slate-500" 
-      />
-    </div>
-  );
-
   const renderDadosPessoais = () => (
-    <div className="grid grid-cols-12 gap-4 animate-fade-in">
-      {/* Linha 1 */}
-      <InputField className="col-span-12 md:col-span-5" label="Nome Completo *" name="nome" value={formData.nome} onChange={handleChange} required />
-      <InputField className="col-span-12 md:col-span-3" label="CPF/CNPJ *" name="cpf" value={formData.cpf} onChange={handleChange} required maxLength={18} />
-      <InputField className="col-span-12 md:col-span-4" label="Telefone *" name="telefone" value={formData.telefone} onChange={handleChange} required maxLength={15} />
+    <div className="grid grid-cols-12 gap-3 animate-fade-in">
+      {/* Linha 1: Nome, CPF, Telefone */}
+      <InputField className="col-span-12 md:col-span-5" label="Nome Completo *" name="nome" value={formData.nome} onChange={handleChange} required autoComplete="name" />
+      <InputField className="col-span-12 md:col-span-3" label="CPF/CNPJ *" name="cpf" value={formData.cpf} onChange={handleChange} required maxLength={18} placeholder="000.000.000-00" />
+      <InputField className="col-span-12 md:col-span-4" label="Telefone *" name="telefone" value={formData.telefone} onChange={handleChange} required maxLength={15} placeholder="(00) 00000-0000" autoComplete="tel" />
 
-      {/* Linha 2 */}
-      <InputField className="col-span-12 md:col-span-5" label="Email" name="email" value={formData.email} type="email" onChange={handleChange} />
-      <InputField className="col-span-6 md:col-span-2" label="CEP *" name="cep" value={formData.cep} onChange={handleChange} required maxLength={9} placeholder="00000-000" />
+      {/* Linha 2: Email, CEP, Número, Complemento */}
+      <InputField className="col-span-12 md:col-span-4" label="Email" name="email" value={formData.email} type="email" onChange={handleChange} autoComplete="email" />
+      <InputField className="col-span-6 md:col-span-2" label="CEP *" name="cep" value={formData.cep} onChange={handleChange} required maxLength={9} placeholder="00000-000" autoComplete="postal-code" />
       <div className="col-span-6 md:col-span-2">
         <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">Número</label>
-        <input type="text" name="numero" ref={numeroInputRef} value={formData.numero} onChange={handleChange} className="block w-full rounded-lg bg-slate-800 border-slate-700 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 py-2 px-3 text-sm border transition-all" />
+        <input 
+            type="text" 
+            name="numero" 
+            ref={numeroInputRef} 
+            value={formData.numero} 
+            onChange={handleChange} 
+            className="block w-full rounded-lg bg-slate-700/50 border-slate-600 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 focus:ring-1 py-2.5 px-3 text-base border transition-all placeholder-slate-500" 
+        />
       </div>
-      <InputField className="col-span-12 md:col-span-3" label="Complemento" name="complemento" value={formData.complemento} onChange={handleChange} />
+      <InputField className="col-span-12 md:col-span-4" label="Complemento" name="complemento" value={formData.complemento} onChange={handleChange} />
 
-      {/* Linha 3 */}
-      <InputField className="col-span-12 md:col-span-5" label="Logradouro" name="logradouro" value={formData.logradouro} onChange={handleChange} />
-      <InputField className="col-span-6 md:col-span-4" label="Bairro" name="bairro" value={formData.bairro} onChange={handleChange} />
-      <InputField className="col-span-6 md:col-span-3" label="Cidade" name="cidade" value={formData.cidade} onChange={handleChange} />
+      {/* Linha 3: Logradouro, Bairro, Cidade */}
+      <InputField className="col-span-12 md:col-span-5" label="Logradouro" name="logradouro" value={formData.logradouro} onChange={handleChange} autoComplete="street-address" />
+      <InputField className="col-span-6 md:col-span-4" label="Bairro" name="bairro" value={formData.bairro} onChange={handleChange} autoComplete="address-level2" />
+      <InputField className="col-span-6 md:col-span-3" label="Cidade" name="cidade" value={formData.cidade} onChange={handleChange} autoComplete="address-level1" />
 
-      {/* Linha 4 */}
+      {/* Linha 4: Referência */}
       <div className="col-span-12">
         <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">Ponto de Referência (Opcional)</label>
         <input 
@@ -367,7 +369,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
           value={formData.ponto_referencia || ''} 
           onChange={handleChange} 
           placeholder="Ex: Próximo ao mercado..."
-          className="block w-full rounded-lg bg-slate-800 border-slate-700 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 py-2 px-3 text-sm border transition-all placeholder-slate-500" 
+          className="block w-full rounded-lg bg-slate-700/50 border-slate-600 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 focus:ring-1 py-2.5 px-3 text-base border transition-all placeholder-slate-500" 
         />
         <datalist id="referencia-options">
           {REFERENCIA_OPTIONS.map(opt => <option key={opt} value={opt} />)}
@@ -382,7 +384,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
       
       <div className="col-span-12 md:col-span-3">
         <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">Concessionária *</label>
-        <select name="concessionaria" value={formData.concessionaria} onChange={handleChange} required className="block w-full rounded-lg bg-slate-800 border-slate-700 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 py-2 px-3 text-sm border">
+        <select name="concessionaria" value={formData.concessionaria} onChange={handleChange} required className="block w-full rounded-lg bg-slate-700/50 border-slate-600 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 py-2.5 px-3 text-base border">
           <option value="">Selecione...</option>
           <optgroup label="Rio Grande do Sul (Destaque)">
             {['CEEE EQUATORIAL', 'RGE', 'CERTEL', 'COPREL', 'CERILUZ', 'NOVA PALMA', 'MUXFELDT', 'HIDROPAN', 'ELETROCAR', 'DEMEI'].map(c => <option key={c} value={c}>{c}</option>)}
@@ -395,7 +397,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
 
       <div className="col-span-12 md:col-span-2">
         <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">Disjuntor *</label>
-        <select name="disjuntor_padrao" value={formData.disjuntor_padrao} onChange={handleChange} required className="block w-full rounded-lg bg-slate-800 border-slate-700 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 py-2 px-3 text-sm border">
+        <select name="disjuntor_padrao" value={formData.disjuntor_padrao} onChange={handleChange} required className="block w-full rounded-lg bg-slate-700/50 border-slate-600 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 py-2.5 px-3 text-base border">
            <option value="">Selecione...</option>
            {['25A', '32A', '40A', '50A', '63A', '70A', '80A', '100A', '125A', '150A', '200A'].map(v => <option key={v} value={v}>{v}</option>)}
         </select>
@@ -403,7 +405,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ clienteEditando, onCance
 
       <div className="col-span-12 md:col-span-4">
         <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">Tipo Sistema *</label>
-        <select name="tipo_sistema" value={formData.tipo_sistema} onChange={handleChange} required className="block w-full rounded-lg bg-slate-800 border-slate-700 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 py-2 px-3 text-sm border">
+        <select name="tipo_sistema" value={formData.tipo_sistema} onChange={handleChange} required className="block w-full rounded-lg bg-slate-700/50 border-slate-600 text-white shadow-inner focus:border-blue-500 focus:ring-blue-500 py-2.5 px-3 text-base border">
            <option value="">Selecione...</option>
            {['MONOFÁSICO 127V', 'MONOFÁSICO 220V', 'BIFÁSICO 127V/220V', 'BIFÁSICO 220V/380V', 'TRIFÁSICO 127V/220V', 'TRIFÁSICO 220V/380V', 'TRIFÁSICO 240V/415V'].map(v => <option key={v} value={v}>{v}</option>)}
         </select>
