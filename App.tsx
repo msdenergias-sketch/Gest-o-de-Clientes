@@ -124,19 +124,23 @@ export default function App() {
   };
 
   const handleDeleteCliente = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Garante que não clica na linha
+    e.preventDefault();
     
     if (window.confirm("Tem certeza que deseja excluir este cliente? Esta ação não pode ser desfeita.")) {
       const backup = [...clientes];
+      
+      // 1. Atualização Otimista: Remove da tela imediatamente
       setClientes(prev => prev.filter(c => c.id !== id));
 
       try {
+        // 2. Executa a exclusão no banco
         await StorageService.deleteCliente(id);
-        await loadData();
+        // Não recarregamos loadData() aqui para evitar que o dado antigo volte se houver delay
       } catch (error) {
         console.error("Erro ao excluir", error);
-        alert("Erro ao excluir cliente.");
-        setClientes(backup);
+        alert("Erro ao excluir cliente. A lista será restaurada.");
+        setClientes(backup); // Restaura se der erro
       }
     }
   };
@@ -154,7 +158,7 @@ export default function App() {
   const handleDeleteServico = async (id: string) => {
     setServicos(prev => prev.filter(s => s.id !== id));
     await StorageService.deleteServico(id);
-    loadData();
+    // loadData(); // Removido para evitar flash
   };
   const handleSaveDespesa = async (d: Despesa) => {
     await StorageService.saveDespesa(d);
@@ -163,19 +167,18 @@ export default function App() {
   const handleDeleteDespesa = async (id: string) => {
     setDespesas(prev => prev.filter(d => d.id !== id));
     await StorageService.deleteDespesa(id);
-    loadData();
+    // loadData(); // Removido para evitar flash
   };
-
-  // --- BACKUP & RESTORE FUNCTIONS ---
-  const handleBackup = async () => {
+  
+  // --- FUNÇÕES DE BACKUP E RESTAURAÇÃO ---
+  const handleBackup = () => {
     const data = {
-      clientes: await StorageService.getClientes(),
-      servicos: await StorageService.getServicos(),
-      despesas: await StorageService.getDespesas()
+      clientes,
+      servicos,
+      despesas,
+      timestamp: new Date().toISOString()
     };
-    
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -185,29 +188,37 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  const handleRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!window.confirm("ATENÇÃO: Isso substituirá todos os dados atuais pelos do backup. Deseja continuar?")) {
+  const handleRestore = () => {
+    if (!window.confirm("⚠️ ATENÇÃO: Restaurar um backup irá SUBSTITUIR todos os dados atuais.\n\nRecomendamos fazer um backup dos dados atuais antes de continuar.\n\nDeseja prosseguir?")) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
-        if (data.clientes) localStorage.setItem('sgs_clientes', JSON.stringify(data.clientes));
-        if (data.servicos) localStorage.setItem('sgs_servicos', JSON.stringify(data.servicos));
-        if (data.despesas) localStorage.setItem('sgs_despesas', JSON.stringify(data.despesas));
-        
-        alert("Dados restaurados com sucesso! A página será recarregada.");
-        window.location.reload();
-      } catch (err) {
-        alert("Erro ao restaurar arquivo. Verifique se é um backup válido.");
-      }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const json = JSON.parse(event.target?.result as string);
+          if (json.clientes) localStorage.setItem('sgs_clientes', JSON.stringify(json.clientes));
+          if (json.servicos) localStorage.setItem('sgs_servicos', JSON.stringify(json.servicos));
+          if (json.despesas) localStorage.setItem('sgs_despesas', JSON.stringify(json.despesas));
+          alert("✅ Dados restaurados com sucesso! A página será recarregada.");
+          window.location.reload();
+        } catch (err) {
+          alert("❌ Erro ao ler arquivo de backup. O arquivo pode estar corrompido.");
+        }
+      };
+      reader.readAsText(file);
     };
-    reader.readAsText(file);
+    input.click();
+  };
+  
+  const handleReload = () => {
+    window.location.reload();
   };
 
   if (showWelcome) {
@@ -228,7 +239,7 @@ export default function App() {
       {/* Background Glow Effects */}
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-blue-900/10 rounded-full blur-[120px] pointer-events-none"></div>
 
-      {/* FOOTER FIXO */}
+      {/* FOOTER FIXO COM BOTÕES DE BACKUP */}
       <footer className="bg-slate-900/90 backdrop-blur text-white py-3 fixed bottom-0 w-full z-40 border-t border-slate-800 shadow-[0_-5px_20px_rgba(0,0,0,0.5)] no-print">
         <div className="container mx-auto px-4 max-w-[95%] flex flex-col md:flex-row justify-between items-center text-xs md:text-sm gap-2">
           <div className="flex items-center gap-3">
@@ -247,25 +258,24 @@ export default function App() {
             <span className="text-slate-400">Todos os direitos reservados © {new Date().getFullYear()}</span>
           </div>
           
-          <div className="flex items-center gap-4 text-slate-300">
-             {/* BACKUP BUTTONS */}
-             <div className="flex items-center gap-2 mr-4 border-r border-slate-700 pr-4">
-                <button onClick={handleBackup} className="hover:text-blue-400 transition-colors flex items-center gap-1" title="Fazer Backup">
-                  💾 <span className="hidden sm:inline">Backup</span>
-                </button>
-                <label className="hover:text-green-400 transition-colors flex items-center gap-1 cursor-pointer" title="Restaurar Backup">
-                  📂 <span className="hidden sm:inline">Restaurar</span>
-                  <input type="file" onChange={handleRestore} accept=".json" className="hidden" />
-                </label>
-             </div>
+          {/* BOTÕES DE BACKUP E RESTAURAÇÃO */}
+          <div className="flex items-center gap-4">
+             <button onClick={handleBackup} className="hover:text-blue-400 transition-colors flex items-center gap-1 text-slate-400 font-bold bg-slate-800/50 px-3 py-1 rounded border border-slate-700 hover:border-blue-500">
+               💾 Backup
+             </button>
+             <button onClick={handleRestore} className="hover:text-yellow-400 transition-colors flex items-center gap-1 text-slate-400 font-bold bg-slate-800/50 px-3 py-1 rounded border border-slate-700 hover:border-yellow-500">
+               📂 Restaurar
+             </button>
+          </div>
 
+          <div className="flex items-center gap-4 text-slate-300">
             <div className="flex items-center gap-1.5 hover:text-green-400 transition-colors cursor-pointer">
               <span className="text-pink-500 text-base">📞</span>
-              <span className="hidden sm:inline">(51) 99166-3470</span>
+              <span>(51) 99166-3470</span>
             </div>
             <div className="flex items-center gap-1.5 hover:text-blue-400 transition-colors">
               <span className="text-blue-400 text-base">📧</span>
-              <a href="mailto:solartekpro@gmail.com" className="hover:underline decoration-blue-400/50 hidden sm:inline">solartekpro@gmail.com</a>
+              <a href="mailto:solartekpro@gmail.com" className="hover:underline decoration-blue-400/50">solartekpro@gmail.com</a>
             </div>
           </div>
         </div>
@@ -278,14 +288,14 @@ export default function App() {
             <div className="flex flex-col md:flex-row items-center gap-5 bg-slate-900/60 backdrop-blur-xl px-8 py-4 rounded-3xl shadow-[0_0_40px_rgba(0,0,0,0.3)] border border-white/5 w-full max-w-3xl mx-auto hover:border-white/10 transition-all duration-500">
               
               {/* Logo Circle */}
-              <div className="relative flex-shrink-0 group cursor-pointer" onClick={() => window.location.reload()} title="Recarregar Sistema">
+              <div className="relative flex-shrink-0 group cursor-pointer z-50" onClick={handleReload} title="Recarregar Sistema">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-green-500 rounded-full blur opacity-60 group-hover:opacity-100 transition duration-500"></div>
-                <div className="relative bg-white p-1 rounded-full w-20 h-20 flex items-center justify-center overflow-hidden border-2 border-slate-900 z-10">
+                <div className="relative bg-white p-1 rounded-full w-20 h-20 flex items-center justify-center overflow-hidden border-2 border-slate-900">
                   {!logoError ? (
                     <img 
                       src="https://drive.google.com/thumbnail?id=1hlyKB3L9oHLtRSrCV-JNdQXpZELdML-p&sz=w200" 
                       alt="Logo SolarTekPro" 
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-contain pointer-events-none"
                       referrerPolicy="no-referrer"
                       onError={() => setLogoError(true)}
                     />

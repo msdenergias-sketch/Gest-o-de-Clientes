@@ -1,139 +1,113 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { Cliente, Servico, Despesa } from '../types';
 
-// Configuração do Firebase fornecida
-const firebaseConfig = {
-  apiKey: "AIzaSyC1_09Apwtig0HT0fK3rxwNPR9Im_f2FjM",
-  authDomain: "solartekpro-c3fad.firebaseapp.com",
-  databaseURL: "https://solartekpro-c3fad-default-rtdb.firebaseio.com",
-  projectId: "solartekpro-c3fad",
-  storageBucket: "solartekpro-c3fad.firebasestorage.app",
-  messagingSenderId: "91595897402",
-  appId: "1:91595897402:web:41e2c062a09655b0521303"
-};
+import { Cliente, Servico, Despesa, Anexo } from '../types';
 
-// Inicializar o aplicativo Firebase
-const app = initializeApp(firebaseConfig);
-// Inicializar o Firestore
-const db = getFirestore(app);
+const STORAGE_KEY_CLIENTES = 'sgs_clientes';
+const STORAGE_KEY_SERVICOS = 'sgs_servicos';
+const STORAGE_KEY_DESPESAS = 'sgs_despesas';
 
-// Nomes das coleções no Firestore
-const COL_CLIENTES = 'clientes';
-const COL_SERVICOS = 'servicos';
-const COL_DESPESAS = 'despesas';
+// Helper to mimic delay (Reduced for save/read, removed for delete)
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const StorageService = {
-  // --- Clientes (Firestore) ---
+  // --- Clientes ---
   getClientes: async (): Promise<Cliente[]> => {
-    try {
-      const querySnapshot = await getDocs(collection(db, COL_CLIENTES));
-      const clientes: Cliente[] = [];
-      querySnapshot.forEach((doc) => {
-        clientes.push(doc.data() as Cliente);
-      });
-      return clientes;
-    } catch (error) {
-      console.error("Erro ao buscar clientes do Firebase:", error);
-      return [];
-    }
+    await delay(50); // Pequeno delay apenas para simular leitura assíncrona
+    const data = localStorage.getItem(STORAGE_KEY_CLIENTES);
+    return data ? JSON.parse(data) : [];
   },
 
   saveCliente: async (cliente: Cliente): Promise<Cliente> => {
+    await delay(150);
+    const clientes = await StorageService.getClientes();
+    const index = clientes.findIndex(c => c.id === cliente.id);
+    
+    if (index >= 0) {
+      clientes[index] = cliente;
+    } else {
+      clientes.push(cliente);
+    }
+    
     try {
-      // Usa o ID do cliente como ID do documento para facilitar atualizações
-      await setDoc(doc(db, COL_CLIENTES, cliente.id), cliente);
-      return cliente;
+      localStorage.setItem(STORAGE_KEY_CLIENTES, JSON.stringify(clientes));
     } catch (e: any) {
-      console.error("Erro ao salvar cliente no Firebase:", e);
-      // Erro comum: Documento muito grande (limite de 1MB do Firestore)
-      if (e.code === 'permission-denied') {
-        throw new Error("PERMISSAO_NEGADA");
-      } else if (e.toString().includes("exceeds the maximum size")) {
-        throw new Error("LIMITE_ATINGIDO"); 
+      if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+        throw new Error("LIMITE_ATINGIDO");
       }
       throw e;
     }
+    return cliente;
   },
 
   deleteCliente: async (id: string): Promise<void> => {
-    try {
-      await deleteDoc(doc(db, COL_CLIENTES, id));
-    } catch (error) {
-      console.error("Erro ao excluir cliente:", error);
-      throw error;
-    }
+    // Sem delay para garantir execução imediata
+    const data = localStorage.getItem(STORAGE_KEY_CLIENTES);
+    const clientes: Cliente[] = data ? JSON.parse(data) : [];
+    
+    const filtered = clientes.filter(c => c.id !== id);
+    localStorage.setItem(STORAGE_KEY_CLIENTES, JSON.stringify(filtered));
   },
 
-  // --- Serviços (Firestore) ---
+  // --- Serviços ---
   getServicos: async (): Promise<Servico[]> => {
-    try {
-      const querySnapshot = await getDocs(collection(db, COL_SERVICOS));
-      const servicos: Servico[] = [];
-      querySnapshot.forEach((doc) => {
-        servicos.push(doc.data() as Servico);
-      });
-      return servicos;
-    } catch (error) {
-      console.error("Erro ao buscar serviços:", error);
-      return [];
-    }
+    await delay(50);
+    const data = localStorage.getItem(STORAGE_KEY_SERVICOS);
+    return data ? JSON.parse(data) : [];
   },
 
   saveServico: async (servico: Servico): Promise<Servico> => {
-    try {
-      await setDoc(doc(db, COL_SERVICOS, servico.id), servico);
-      return servico;
-    } catch (error) {
-      console.error("Erro ao salvar serviço:", error);
-      throw error;
+    await delay(150);
+    const servicos = await StorageService.getServicos();
+    const index = servicos.findIndex(s => s.id === servico.id);
+    
+    if (index >= 0) {
+      servicos[index] = servico;
+    } else {
+      servicos.push(servico);
     }
+    
+    localStorage.setItem(STORAGE_KEY_SERVICOS, JSON.stringify(servicos));
+    return servico;
   },
 
   deleteServico: async (id: string): Promise<void> => {
-    try {
-      await deleteDoc(doc(db, COL_SERVICOS, id));
-    } catch (error) {
-      console.error("Erro ao excluir serviço:", error);
-      throw error;
-    }
+    // Sem delay
+    const data = localStorage.getItem(STORAGE_KEY_SERVICOS);
+    const servicos: Servico[] = data ? JSON.parse(data) : [];
+    const filtered = servicos.filter(s => s.id !== id);
+    localStorage.setItem(STORAGE_KEY_SERVICOS, JSON.stringify(filtered));
   },
 
-  // --- Despesas (Firestore) ---
+  // --- Despesas ---
   getDespesas: async (): Promise<Despesa[]> => {
-    try {
-      const querySnapshot = await getDocs(collection(db, COL_DESPESAS));
-      const despesas: Despesa[] = [];
-      querySnapshot.forEach((doc) => {
-        despesas.push(doc.data() as Despesa);
-      });
-      return despesas;
-    } catch (error) {
-      console.error("Erro ao buscar despesas:", error);
-      return [];
-    }
+    await delay(50);
+    const data = localStorage.getItem(STORAGE_KEY_DESPESAS);
+    return data ? JSON.parse(data) : [];
   },
 
   saveDespesa: async (despesa: Despesa): Promise<Despesa> => {
-    try {
-      await setDoc(doc(db, COL_DESPESAS, despesa.id), despesa);
-      return despesa;
-    } catch (error) {
-      console.error("Erro ao salvar despesa:", error);
-      throw error;
+    await delay(150);
+    const despesas = await StorageService.getDespesas();
+    const index = despesas.findIndex(d => d.id === despesa.id);
+    
+    if (index >= 0) {
+      despesas[index] = despesa;
+    } else {
+      despesas.push(despesa);
     }
+    
+    localStorage.setItem(STORAGE_KEY_DESPESAS, JSON.stringify(despesas));
+    return despesa;
   },
 
   deleteDespesa: async (id: string): Promise<void> => {
-    try {
-      await deleteDoc(doc(db, COL_DESPESAS, id));
-    } catch (error) {
-      console.error("Erro ao excluir despesa:", error);
-      throw error;
-    }
+    // Sem delay
+    const data = localStorage.getItem(STORAGE_KEY_DESPESAS);
+    const despesas: Despesa[] = data ? JSON.parse(data) : [];
+    const filtered = despesas.filter(d => d.id !== id);
+    localStorage.setItem(STORAGE_KEY_DESPESAS, JSON.stringify(filtered));
   },
 
-  // --- Utils (Mantido para compressão de imagem) ---
+  // --- Utils ---
   fileToBase64: (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       // Se for PDF ou não for imagem, converte normal
@@ -145,7 +119,7 @@ export const StorageService = {
         return;
       }
 
-      // Compressão de Imagem Otimizada para Firestore (Max 1MB per doc)
+      // Se for imagem, vamos comprimir drasticamente para economizar LocalStorage
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = (event) => {
@@ -155,7 +129,7 @@ export const StorageService = {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          // Redimensionar agressivo (Max 800px) para garantir que cabe no Firestore
+          // Redimensionar agressivo (Max 800px)
           const MAX_WIDTH = 800;
           const MAX_HEIGHT = 800;
           let width = img.width;
