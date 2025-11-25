@@ -1,104 +1,57 @@
+export type Tab = 'new-client' | 'client-list' | 'financial';
 
-export enum StatusCliente {
-  EM_PROJETO = 'Em Projeto',
-  EM_HOMOLOGACAO = 'Em Homologação',
-  AGUARDANDO_VISTORIA = 'Aguardando Vistoria',
-  CONCLUIDO = 'Concluído'
-}
+export type FormStep = 
+  | 'personal-data' 
+  | 'installation' 
+  | 'initial-docs' 
+  | 'concessionaire-docs' 
+  | 'projects';
 
-export enum StatusServico {
-  ORCAMENTO = 'orcamento',
-  APROVADO = 'aprovado',
-  EM_ANDAMENTO = 'em_andamento',
-  CONCLUIDO = 'concluido',
-  PAGO = 'pago',
-  CANCELADO = 'cancelado'
-}
-
-export interface Anexo {
-  id: string;
-  nome: string;
-  tipo: string;
-  tamanho: number;
-  dataUpload: string;
-  dados: string; // Base64
-}
-
-export interface Cliente {
-  id: string;
-  nome: string;
-  cpf: string;
-  telefone: string;
-  email: string;
-  cep: string;
-  logradouro: string;
-  numero: string;
-  complemento: string;
-  bairro: string;
-  cidade: string;
-  ponto_referencia?: string; // Campo novo
-  unidade_consumidora: string;
-  concessionaria: string;
-  disjuntor_padrao: string;
-  tipo_sistema: string;
-  tempo_projeto: number;
-  data_entrada_homologacao: string;
-  data_resposta_concessionaria: string;
-  data_vistoria: string;
+export interface ClientData {
+  id: string; // Unique ID
+  createdAt: string;
+  // Personal
+  fullName: string;
   status: string;
-  data_cadastro: string;
-  
-  // Histórico de datas para cada etapa do fluxo
-  datas_etapas?: Record<string, string>;
-  
-  // Documentação
-  doc_identificacao_status: string;
-  conta_energia_status: string;
-  procuracao_status: string;
-  outras_imagens_status: string;
-  
-  // Anexos
-  anexos_identificacao: Anexo[];
-  anexos_conta: Anexo[];
-  anexos_procuracao: Anexo[];
-  anexos_outras_imagens: Anexo[];
+  docType: string;
+  docNumber: string;
+  email: string;
+  phone: string;
+  notes: string;
+  // Address
+  cep: string;
+  street: string;
+  number: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  reference: string;
+  // Technical
+  concessionaire: string;
+  uc: string;
+  installType: string;
+  avgConsumption: string;
+  connectionType: string;
+  voltage: string;
+  breaker: string;
+  // Location
+  latitude: string;
+  longitude: string;
+  utmZone: string;
+  utmEasting: string;
+  utmNorthing: string;
 }
 
-export interface Servico {
-  id: string;
-  cliente_id: string;
-  cliente_nome: string;
-  tipo_servico: string;
-  descricao: string;
-  valor: number;
-  status: StatusServico;
-  forma_pagamento: string;
-  data_servico: string;
-  data_vencimento: string;
-  data_pagamento: string;
-  data_cadastro: string;
+// Enum for select inputs
+export enum ClientStatus {
+  Active = 'Ativo',
+  Pending = 'Pendente',
+  Inactive = 'Inativo',
+  Lead = 'Lead'
 }
 
-export interface Despesa {
-  id: string;
-  data_despesa: string;
-  categoria: string;
-  descricao: string;
-  valor: number;
-  forma_pagamento: string;
-  observacoes: string;
-  data_cadastro: string;
-}
-
-export interface FinanceSummary {
-  recebido: number;
-  pendente: number;
-  atrasado: number;
-  vencendo: number;
-  faturado: number;
-  despesas: number;
-  lucro: number;
-  ativos: number;
-  qtdAtraso: number;
-  qtdVencendo: number;
+export enum DocType {
+  CPF = 'CPF',
+  CNPJ = 'CNPJ',
+  RG = 'RG'
 }
